@@ -80,7 +80,7 @@ team_t team = {
 #define GET_SIZE(p)  (GET(p) & ~0x7)   //0x1 = 2 진수로 1, 0x2 = 2 진수로 10
 // 블록의 사이즈만 가지고 온다. ex. 1011 0111 & 1111 1000 = 1011 0000으로 사이즈만 읽어옴을 알 수 있다.
 
-#define GET ALLOC(p) (GET(p)& 0x1)
+#define GET_ALLOC(p) (GET(p)& 0x1)
 // 블록이 할당되었는지 free인지를 나타내는 flag를 읽어온다. ex. 1011 0111 & 0000 0001 = 0000 0001로 allocated임을 알 수 있다.
 
 
@@ -278,7 +278,7 @@ void * mm_malloc (size_t size)
 
     // 적절한 공간을 가진 블록을 찾으면 할당(혹은 분할까지) 진행한다.
     // bp는 계속 free 블록을 가리킬 수 있도록 한다.
-    if ((bp = find_fit(aszie)) ! = NULL) { 
+    if ((bp = find_fit(asize)) != NULL) { 
         place (bp, asize);
         return bp;
     }
