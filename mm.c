@@ -102,7 +102,7 @@ team_t team = {
 //(이전 블록의 footer에서 이전 블록의 크기 확인)
 
 /* define searching method for find suitable free blocks to allocate */
-// #define NEXT_FIT                                                            
+#define NEXT_FIT                                                            
 // define하면 next_fit, 안하면 first_fit으로 탐색한다.
 
 /* global variable & functions */
@@ -267,7 +267,7 @@ void * mm_malloc (size_t size)
 
     /* Ignore spurious reqeusts*/
     if ( size == 0)  // 0이면 요청무시
-    retrun NULL;
+        return NULL;
 
     /* A블럭의 최소크기를 맞추기 위해 size를 조정 */
     if (size <= DSIZE) 
