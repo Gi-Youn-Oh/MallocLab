@@ -89,6 +89,26 @@ team_t team = {
 // 결국엔 *(bp)인 셈으로 bp가 가리키고 있는 칸의 값이 나오게 되는데, 이 때 주소값이 나오게 된다.(prec 혹은 succ)
 #define PREC_FREEP(bp)      (*(void**)(bp))         
 #define SUCC_FREEP(bp)      (*(void**)(bp + WSIZE))
+
+
+/* 
+ * global variable & functions
+ */
+static char* heap_listp;                                                    // 항상 prologue block을 가리키는 정적 전역 변수 설정. static 변수는 함수 내부(지역)에서도 사용이 가능하고 함수 외부(전역)에서도 사용이 가능하다.
+static char* free_listp;                                                    // free list의 맨 첫 블록을 가리키는 포인터이다.
+
+/* 코드 순서상, implicit declaration of function(warning)을 피하기 위해 미리 선언해주는 부분? */
+static void* extend_heap(size_t words);
+static void* coalesce(void* bp);
+static void* find_fit(size_t asize);
+static void place(void* bp, size_t newsize);
+
+int mm_init(void);
+void *mm_malloc(size_t size);
+void mm_free(void *bp);
+void *mm_realloc(void *ptr, size_t size);
+
+
 /*
  * mm_init
  */
