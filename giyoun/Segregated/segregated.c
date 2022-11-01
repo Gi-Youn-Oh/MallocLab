@@ -68,13 +68,13 @@ team_t team = {
 #define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
 
 /* Adjust the reallocation tag */
-#define SET_RATAG(p)   (GET(p) |= 0x2)
+#define SET_RATAG(p)   (GET(p) |= 0x2) // realloc 태그 달기
 #define REMOVE_RATAG(p) (GET(p) &= ~0x2)
 
 /* Read the size and allocation bit from address p */
 #define GET_SIZE(p)  (GET(p) & ~0x7)
-#define GET_ALLOC(p) (GET(p) & 0x1)
-#define GET_TAG(p)   (GET(p) & 0x2)
+#define GET_ALLOC(p) (GET(p) & 0x1)  // allocate 여부 확인
+#define GET_TAG(p)   (GET(p) & 0x2)  // realloc tag 여부 확인
 
 
 /* Address of block's header and footer */
@@ -538,4 +538,7 @@ void *mm_realloc(void *ptr, size_t size)
     
     // Return the reallocated block 
     return new_ptr;
-}
+}            
+
+1. Reallocte tag 를 new_ptr 다음에 달아주는이유
+2. coalesce 할때 realloc tag는 건드리지 않는 이유
