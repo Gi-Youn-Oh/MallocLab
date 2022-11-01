@@ -65,7 +65,7 @@ team_t team = {
 #define PUT_NOTAG(p, val) (*(unsigned int *)(p) = (val))
 
 /* Store predecessor or successor pointer for free blocks */
-#define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
+#define SET_PTR(p, bp) (*(unsigned int *)(p) = (unsigned int)(bp))
 
 /* Adjust the reallocation tag */
 #define SET_RATAG(p)   (GET(p) |= 0x2)
@@ -78,20 +78,20 @@ team_t team = {
 
 
 /* Address of block's header and footer */
-#define HDRP(ptr) ((char *)(ptr) - WSIZE)
-#define FTRP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr)) - DSIZE)
+#define HDRP(bp) ((char *)(bp) - WSIZE)
+#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 
 /* Address of next and previous blocks */
-#define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE((char *)(ptr) - WSIZE))
-#define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE((char *)(ptr) - DSIZE))
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE((char *)(bp) - WSIZE))
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - DSIZE))
 
 /* Address of free block's predecessor and successor entries */
-#define SUCC_PTR(ptr) ((char *)(ptr))
-#define PRED_PTR(ptr) ((char *)(ptr) + WSIZE)
+#define SUCC_PTR(bp) ((char *)(bp))
+#define PRED_PTR(bp) ((char *)(bp) + WSIZE)
 
 /* Address of free block's predecessor and successor on the segregated list */
-#define SUCC(ptr) (*(char **)(ptr))
-#define PRED(ptr) (*(char **)(PRED_PTR(ptr)))
+#define SUCC(bp) (*(char **)(bp))
+#define PRED(bp) (*(char **)(PRED_PTR(bp)))
 
 
 /*
@@ -104,10 +104,10 @@ void *segregated_free_lists[LISTLIMIT];
  * Function prototypes
  */
 static void *extend_heap(size_t size);
-static void *coalesce(void *ptr);
-static void *place(void *ptr, size_t asize);
-static void insert_node(void *ptr, size_t size);
-static void delete_node(void *ptr);
+static void *coalesce(void *bp);
+static void *place(void *bp, size_t asize);
+static void put_free(void *bp, size_t size);
+static void remove_free(void *bp);
 
 //static void checkheap(int verbose);
 
@@ -159,74 +159,28 @@ bp+WSIZE--> +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+-
 //////////////////////////////////////// Helper functions //////////////////////////////////////////////////////////
 static void *extend_heap(size_t size)
 {
-    void *ptr;                   
+    void *bp;                   
     size_t asize;                // Adjusted size 
     
     asize = ALIGN(size);
     
-    if ((ptr = mem_sbrk(asize)) == (void *)-1)
+    if ((bp = mem_sbrk(asize)) == (void *)-1)
         return NULL;
     
     // Set headers and footer 
-    PUT_NOTAG(HDRP(ptr), PACK(asize, 0));  
-    PUT_NOTAG(FTRP(ptr), PACK(asize, 0));   
-    PUT_NOTAG(HDRP(NEXT_BLKP(ptr)), PACK(0, 1)); 
-    insert_node(ptr, asize);
+    PUT_NOTAG(HDRP(bp), PACK(asize, 0));  
+    PUT_NOTAG(FTRP(bp), PACK(asize, 0));   
+    PUT_NOTAG(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); 
+    put_free
+(bp, asize);
 
-    return coalesce(ptr);
+    return coalesce(bp);
 }
 
-static void insert_node(void *ptr, size_t size) {
+static void put_free(void *bp, size_t size) {
     int list = 0;
-    void *search_ptr = ptr;
+    void *search_ptr = bp;
     void *insert_ptr = NULL;
-    
-    // Select segregated list 
-    // list 0~18 까지만 쓰는 이유 : 마지막 list에서 Null 값을 표시해야 하기 때문입니다.
-    while ((list < LISTLIMIT - 1) && (size > 1)) { // list_num [0,1,2,3...] size = [64,16,8,4,2,1,0] 탈출
-        size >>= 1;
-        list++;
-    }
-    
-    // Keep size ascending order and search
-    search_ptr = segregated_free_lists[list];
-    while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr)))) { // 가리키는 포인터가 만약 넣으려는 사이즈 보다 작으면 다음 리스트를 찾는다.
-        insert_ptr = search_ptr;
-        search_ptr = SUCC(search_ptr);
-    }
-    
-    // Set predecessor and successor  ptr = 현재 , search_ptr 다음 / insert_prt 이전 
-    if (search_ptr != NULL) { // 1. 찾으려는 리스트가 null 이 아닐때
-        if (insert_ptr != NULL) { // 1-1) insert_ptr이 null 이 아닐 때 
-            SET_PTR(SUCC_PTR(ptr), search_ptr);
-            SET_PTR(PRED_PTR(search_ptr), ptr);
-            SET_PTR(PRED_PTR(ptr), insert_ptr);
-            SET_PTR(SUCC_PTR(insert_ptr), ptr);
-        } else {                    // 1-2) insert_ptr이 null 일때 
-            SET_PTR(SUCC_PTR(ptr), search_ptr);
-            SET_PTR(PRED_PTR(search_ptr), ptr);
-            SET_PTR(PRED_PTR(ptr), NULL);
-            segregated_free_lists[list] = ptr;
-        }
-    } else {                 //2.  찾으려는 리스트가 null 일때 
-        if (insert_ptr != NULL) {  // 2-1)insert_ptr이 null이 아닐 때
-            SET_PTR(SUCC_PTR(ptr), NULL);
-            SET_PTR(PRED_PTR(ptr), insert_ptr);
-            SET_PTR(SUCC_PTR(insert_ptr), ptr);
-        } else {                  // 2-2)insert_ptr이 null 일때
-            SET_PTR(SUCC_PTR(ptr), NULL);
-            SET_PTR(PRED_PTR(ptr), NULL);
-            segregated_free_lists[list] = ptr;
-        }
-    }
-    
-    return;
-}
-
-
-static void delete_node(void *ptr) {
-    int list = 0;
-    size_t size = GET_SIZE(HDRP(ptr));
     
     // Select segregated list 
     while ((list < LISTLIMIT - 1) && (size > 1)) {
@@ -234,18 +188,64 @@ static void delete_node(void *ptr) {
         list++;
     }
     
-    if (SUCC(ptr) != NULL) {  // 1.다음 블록이 있을때
-        if (PRED(ptr) != NULL) { //1-1) 이전 블록 또한 있을때
-            SET_PTR(PRED_PTR(SUCC(ptr)), PRED(ptr));
-            SET_PTR(SUCC_PTR(PRED(ptr)), SUCC(ptr));
-        } else {  // 1-2) 이전블록이 없을 때
-            SET_PTR(PRED_PTR(SUCC(ptr)), NULL);
-            segregated_free_lists[list] = SUCC(ptr);
+    // Keep size ascending order and search
+    search_ptr = segregated_free_lists[list];
+    while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr)))) {
+        insert_ptr = search_ptr;
+        search_ptr = SUCC(search_ptr);
+    }
+    
+    // Set predecessor and successor 
+    if (search_ptr != NULL) {
+        if (insert_ptr != NULL) {
+            SET_PTR(SUCC_PTR(bp), search_ptr);
+            SET_PTR(PRED_PTR(search_ptr), bp);
+            SET_PTR(PRED_PTR(bp), insert_ptr);
+            SET_PTR(SUCC_PTR(insert_ptr), bp);
+        } else {
+            SET_PTR(SUCC_PTR(bp), search_ptr);
+            SET_PTR(PRED_PTR(search_ptr), bp);
+            SET_PTR(PRED_PTR(bp), NULL);
+            segregated_free_lists[list] = bp;
         }
-    } else { //2. 다음 블록이 없을 때
-        if (PRED(ptr) != NULL) { //2-1) 이전블록은 있다
-            SET_PTR(SUCC_PTR(PRED(ptr)), NULL); // 이전블록의 다음블록은 없다.
-        } else { // 2-2) 이전 블록도 없다.
+    } else {
+        if (insert_ptr != NULL) {
+            SET_PTR(SUCC_PTR(bp), NULL);
+            SET_PTR(PRED_PTR(bp), insert_ptr);
+            SET_PTR(SUCC_PTR(insert_ptr), bp);
+        } else {
+            SET_PTR(SUCC_PTR(bp), NULL);
+            SET_PTR(PRED_PTR(bp), NULL);
+            segregated_free_lists[list] = bp;
+        }
+    }
+    
+    return;
+}
+
+
+static void remove_free(void *bp) {
+    int list = 0;
+    size_t size = GET_SIZE(HDRP(bp));
+    
+    // Select segregated list 
+    while ((list < LISTLIMIT - 1) && (size > 1)) {
+        size >>= 1;
+        list++;
+    }
+    
+    if (SUCC(bp) != NULL) {
+        if (PRED(bp) != NULL) {
+            SET_PTR(PRED_PTR(SUCC(bp)), PRED(bp));
+            SET_PTR(SUCC_PTR(PRED(bp)), SUCC(bp));
+        } else {
+            SET_PTR(PRED_PTR(SUCC(bp)), NULL);
+            segregated_free_lists[list] = SUCC(bp);
+        }
+    } else {
+        if (PRED(bp) != NULL) {
+            SET_PTR(SUCC_PTR(PRED(bp)), NULL);
+        } else {
             segregated_free_lists[list] = NULL;
         }
     }
@@ -254,85 +254,85 @@ static void delete_node(void *ptr) {
 }
 
 
-static void *coalesce(void *ptr)
+static void *coalesce(void *bp)
 {
-    size_t prev_alloc = GET_ALLOC(HDRP(PREV_BLKP(ptr)));
-    size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
-    size_t size = GET_SIZE(HDRP(ptr));
+    size_t prev_alloc = GET_ALLOC(HDRP(PREV_BLKP(bp)));
+    size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+    size_t size = GET_SIZE(HDRP(bp));
     
 
     // Do not coalesce with previous block if the previous block is tagged with Reallocation tag
-    if (GET_TAG(HDRP(PREV_BLKP(ptr))))
+    if (GET_TAG(HDRP(PREV_BLKP(bp))))
         prev_alloc = 1;
 
-
-
-
     if (prev_alloc && next_alloc) {                         // Case 1
-        return ptr;
+        return bp;
     }
     else if (prev_alloc && !next_alloc) {                   // Case 2
-        delete_node(ptr);
-        delete_node(NEXT_BLKP(ptr));
-        size += GET_SIZE(HDRP(NEXT_BLKP(ptr)));
-        PUT(HDRP(ptr), PACK(size, 0));
-        PUT(FTRP(ptr), PACK(size, 0));
+        remove_free(bp);
+        remove_free(NEXT_BLKP(bp));
+        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
     } else if (!prev_alloc && next_alloc) {                 // Case 3 
-        delete_node(ptr);
-        delete_node(PREV_BLKP(ptr));
-        size += GET_SIZE(HDRP(PREV_BLKP(ptr)));
-        PUT(FTRP(ptr), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
-        ptr = PREV_BLKP(ptr);
+        remove_free(bp);
+        remove_free(PREV_BLKP(bp));
+        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+        PUT(FTRP(bp), PACK(size, 0));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        bp = PREV_BLKP(bp);
     } else {                                                // Case 4
-        delete_node(ptr);
-        delete_node(PREV_BLKP(ptr));
-        delete_node(NEXT_BLKP(ptr));
-        size += GET_SIZE(HDRP(PREV_BLKP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
-        PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(ptr)), PACK(size, 0));
-        ptr = PREV_BLKP(ptr);
+        remove_free(bp);
+        remove_free(PREV_BLKP(bp));
+        remove_free(NEXT_BLKP(bp));
+        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
+        bp = PREV_BLKP(bp);
     }
     
-    insert_node(ptr, size);
+    put_free
+(bp, size);
     
-    return ptr;
+    return bp;
 }
 
-static void *place(void *ptr, size_t asize) // ptr_size = segregated list 에서 들고온 가용블록
+static void *place(void *bp, size_t asize)
 {
-    size_t ptr_size = GET_SIZE(HDRP(ptr)); // ptr_size 크기 정보 획득
-    size_t remainder = ptr_size - asize;  // 남는 공간 = ptr_size(가져온 가용블록)-(사용할 크기)
+    size_t ptr_size = GET_SIZE(HDRP(bp));
+    size_t remainder = ptr_size - asize;
     
-    delete_node(ptr);
+    remove_free(bp);
     
     
-    if (remainder <= DSIZE * 2) {
+    if (remainder <= DSIZE * 2) { // 남는 블록이 8이하이면 분리할 필요가 없다.
         // Do not split block 
-        PUT(HDRP(ptr), PACK(ptr_size, 1)); 
-        PUT(FTRP(ptr), PACK(ptr_size, 1)); 
+        PUT(HDRP(bp), PACK(ptr_size, 1)); 
+        PUT(FTRP(bp), PACK(ptr_size, 1)); 
     }
     
-    else if (asize >= 100) {
+    else if (asize >= 100) { // 할당할 메모리가 73이상이면(64이상이면) 초기 chunksize에서 넘기 때문에 할당할 수 있도록 남겨두고 다음블록으로 찾아간다.
         // Split block
-        PUT(HDRP(ptr), PACK(remainder, 0));
-        PUT(FTRP(ptr), PACK(remainder, 0));
-        PUT_NOTAG(HDRP(NEXT_BLKP(ptr)), PACK(asize, 1));
-        PUT_NOTAG(FTRP(NEXT_BLKP(ptr)), PACK(asize, 1));
-        insert_node(ptr, remainder);
-        return NEXT_BLKP(ptr);
+        PUT(HDRP(bp), PACK(remainder, 0));
+        PUT(FTRP(bp), PACK(remainder, 0));
+        PUT_NOTAG(HDRP(NEXT_BLKP(bp)), PACK(asize, 1));
+        PUT_NOTAG(FTRP(NEXT_BLKP(bp)), PACK(asize, 1));
+        put_free
+    (bp, remainder);
+        return NEXT_BLKP(bp);
         
     }
     
     else {
         // Split block
-        PUT(HDRP(ptr), PACK(asize, 1)); 
-        PUT(FTRP(ptr), PACK(asize, 1)); 
-        PUT_NOTAG(HDRP(NEXT_BLKP(ptr)), PACK(remainder, 0)); 
-        PUT_NOTAG(FTRP(NEXT_BLKP(ptr)), PACK(remainder, 0)); 
-        insert_node(NEXT_BLKP(ptr), remainder);
+        PUT(HDRP(bp), PACK(asize, 1)); // 73미만(64이하) 상태면 할당가는하고 남기때문에 remainder가 8이상 조건 이기때문에 남는 블럭을 할당해준다.
+        PUT(FTRP(bp), PACK(asize, 1)); 
+        PUT_NOTAG(HDRP(NEXT_BLKP(bp)), PACK(remainder, 0)); 
+        PUT_NOTAG(FTRP(NEXT_BLKP(bp)), PACK(remainder, 0)); 
+        put_free
+    (NEXT_BLKP(bp), remainder);
     }
-    return ptr;
+    return bp;
 }
 
 
@@ -388,7 +388,7 @@ void *mm_malloc(size_t size)
 {
     size_t asize;       // Adjusted block size
     size_t extendsize;  // Amount to extend heap if no fit
-    void *ptr = NULL;   // Pointer
+    void *bp = NULL;   // Pointer
     int list = 0;       // List counter
     
     /* Filter invalid block size */
@@ -406,13 +406,13 @@ void *mm_malloc(size_t size)
     size_t searchsize = asize;
     while (list < LISTLIMIT) {
         if ((list == LISTLIMIT - 1) || ((searchsize <= 1) && (segregated_free_lists[list] != NULL))) {
-            ptr = segregated_free_lists[list];
+            bp = segregated_free_lists[list];
             /* Ignore blocks that are too small or marked with the reallocation bit */
-            while ((ptr != NULL) && ((asize > GET_SIZE(HDRP(ptr))) || (GET_TAG(HDRP(ptr))))) // tag 1 표시시 안된다는 의미 
+            while ((bp != NULL) && ((asize > GET_SIZE(HDRP(bp))) || (GET_TAG(HDRP(bp)))))
             {
-                ptr = SUCC(ptr);
+                bp = SUCC(bp);
             }
-            if (ptr != NULL)
+            if (bp != NULL)
                 break;
         }
         
@@ -421,53 +421,45 @@ void *mm_malloc(size_t size)
     }
     
     /* Extend the heap if no free blocks of sufficient size are found */
-    if (ptr == NULL) {
+    if (bp == NULL) {
         extendsize = MAX(asize, CHUNKSIZE);
         
-        if ((ptr = extend_heap(extendsize)) == NULL)
+        if ((bp = extend_heap(extendsize)) == NULL)
             return NULL;
     }
     
     /* Place the block */
-    ptr = place(ptr, asize);
+    bp = place(bp, asize);
     
     
     /* Return pointer to newly allocated block */
-    return ptr;
+    return bp;
 }
-
-
-
-
-
-
-
-
-
 
 /*
  * mm_free - Freeing a block does nothing.
  *
- * Role : The mm_free routine frees the block pointed to by ptr
+ * Role : The mm_free routine frees the block pointed to by bp
  *
  * Return value : returns nothing
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
-    size_t size = GET_SIZE(HDRP(ptr));
+    size_t size = GET_SIZE(HDRP(bp));
  
     /* Unset the reallocation tag on the next block */
-    REMOVE_RATAG(HDRP(NEXT_BLKP(ptr)));
+    REMOVE_RATAG(HDRP(NEXT_BLKP(bp)));
 
     /* Adjust the allocation status in boundary tags */
-    PUT(HDRP(ptr), PACK(size, 0));
-    PUT(FTRP(ptr), PACK(size, 0));
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
     
     /* Insert new block into appropriate list */
-    insert_node(ptr, size);
+    put_free
+(bp, size);
     
     /* Coalesce free block */
-    coalesce(ptr);
+    coalesce(bp);
     
     return;
 }
@@ -482,9 +474,9 @@ void mm_free(void *ptr)
  *  by using reallocation tags
  *  in reallocation cases (realloc-bal.rep, realloc2-bal.rep)
  */
-void *mm_realloc(void *ptr, size_t size)
+void *mm_realloc(void *bp, size_t size)
 {
-    void *new_ptr = ptr;    /* Pointer to be returned */
+    void *new_ptr = bp;    /* Pointer to be returned */
     size_t new_size = size; /* Size of new block */
     int remainder;          /* Adequacy of block sizes */
     int extendsize;         /* Size of heap extension */
@@ -505,13 +497,13 @@ void *mm_realloc(void *ptr, size_t size)
     new_size += REALLOC_BUFFER;
     
     /* Calculate block buffer */
-    block_buffer = GET_SIZE(HDRP(ptr)) - new_size;
+    block_buffer = GET_SIZE(HDRP(bp)) - new_size;
     
     /* Allocate more space if overhead falls below the minimum */
     if (block_buffer < 0) {
         /* Check if next block is a free block or the epilogue block */
-        if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) || !GET_SIZE(HDRP(NEXT_BLKP(ptr)))) { // 다음 블록이 가용블록이거나, 에필로그 블록일 경우
-            remainder = GET_SIZE(HDRP(ptr)) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) - new_size;
+        if (!GET_ALLOC(HDRP(NEXT_BLKP(bp))) || !GET_SIZE(HDRP(NEXT_BLKP(bp)))) {
+            remainder = GET_SIZE(HDRP(bp)) + GET_SIZE(HDRP(NEXT_BLKP(bp))) - new_size;
             if (remainder < 0) {
                 extendsize = MAX(-remainder, CHUNKSIZE);
                 if (extend_heap(extendsize) == NULL)
@@ -519,15 +511,15 @@ void *mm_realloc(void *ptr, size_t size)
                 remainder += extendsize;
             }
             
-            delete_node(NEXT_BLKP(ptr));
+            remove_free(NEXT_BLKP(bp));
             
             // Do not split block
-            PUT_NOTAG(HDRP(ptr), PACK(new_size + remainder, 1)); 
-            PUT_NOTAG(FTRP(ptr), PACK(new_size + remainder, 1)); 
-        } else { //다음블록이 가용블록이 아니거나, 에필로그 블록이 아닐때
+            PUT_NOTAG(HDRP(bp), PACK(new_size + remainder, 1)); 
+            PUT_NOTAG(FTRP(bp), PACK(new_size + remainder, 1)); 
+        } else {
             new_ptr = mm_malloc(new_size - DSIZE);
-            memcpy(new_ptr, ptr, MIN(size, new_size));
-            mm_free(ptr);
+            memcpy(new_ptr, bp, MIN(size, new_size));
+            mm_free(bp);
         }
         block_buffer = GET_SIZE(HDRP(new_ptr)) - new_size;
     }

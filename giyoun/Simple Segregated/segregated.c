@@ -182,37 +182,38 @@ static void insert_node(void *ptr, size_t size) {
     void *insert_ptr = NULL;
     
     // Select segregated list 
-    while ((list < LISTLIMIT - 1) && (size > 1)) {
+    // list 0~18 까지만 쓰는 이유 : 마지막 list에서 Null 값을 표시해야 하기 때문입니다.
+    while ((list < LISTLIMIT - 1) && (size > 1)) { // list_num [0,1,2,3...] size = [64,16,8,4,2,1,0] 탈출
         size >>= 1;
         list++;
     }
     
     // Keep size ascending order and search
     search_ptr = segregated_free_lists[list];
-    while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr)))) {
+    while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr)))) { // 가리키는 포인터가 만약 넣으려는 사이즈 보다 작으면 다음 리스트를 찾는다.
         insert_ptr = search_ptr;
         search_ptr = SUCC(search_ptr);
     }
     
-    // Set predecessor and successor 
-    if (search_ptr != NULL) {
-        if (insert_ptr != NULL) {
+    // Set predecessor and successor  ptr = 현재 , search_ptr 다음 / insert_prt 이전 
+    if (search_ptr != NULL) { // 1. 찾으려는 리스트가 null 이 아닐때
+        if (insert_ptr != NULL) { // 1-1) insert_ptr이 null 이 아닐 때 
             SET_PTR(SUCC_PTR(ptr), search_ptr);
             SET_PTR(PRED_PTR(search_ptr), ptr);
             SET_PTR(PRED_PTR(ptr), insert_ptr);
             SET_PTR(SUCC_PTR(insert_ptr), ptr);
-        } else {
+        } else {                    // 1-2) insert_ptr이 null 일때 
             SET_PTR(SUCC_PTR(ptr), search_ptr);
             SET_PTR(PRED_PTR(search_ptr), ptr);
             SET_PTR(PRED_PTR(ptr), NULL);
             segregated_free_lists[list] = ptr;
         }
-    } else {
-        if (insert_ptr != NULL) {
+    } else {                 //2.  찾으려는 리스트가 null 일때 
+        if (insert_ptr != NULL) {  // 2-1)insert_ptr이 null이 아닐 때
             SET_PTR(SUCC_PTR(ptr), NULL);
             SET_PTR(PRED_PTR(ptr), insert_ptr);
             SET_PTR(SUCC_PTR(insert_ptr), ptr);
-        } else {
+        } else {                  // 2-2)insert_ptr이 null 일때
             SET_PTR(SUCC_PTR(ptr), NULL);
             SET_PTR(PRED_PTR(ptr), NULL);
             segregated_free_lists[list] = ptr;
@@ -233,18 +234,18 @@ static void delete_node(void *ptr) {
         list++;
     }
     
-    if (SUCC(ptr) != NULL) {
-        if (PRED(ptr) != NULL) {
+    if (SUCC(ptr) != NULL) {  // 1.다음 블록이 있을때
+        if (PRED(ptr) != NULL) { //1-1) 이전 블록 또한 있을때
             SET_PTR(PRED_PTR(SUCC(ptr)), PRED(ptr));
             SET_PTR(SUCC_PTR(PRED(ptr)), SUCC(ptr));
-        } else {
+        } else {  // 1-2) 이전블록이 없을 때
             SET_PTR(PRED_PTR(SUCC(ptr)), NULL);
             segregated_free_lists[list] = SUCC(ptr);
         }
-    } else {
-        if (PRED(ptr) != NULL) {
-            SET_PTR(SUCC_PTR(PRED(ptr)), NULL);
-        } else {
+    } else { //2. 다음 블록이 없을 때
+        if (PRED(ptr) != NULL) { //2-1) 이전블록은 있다
+            SET_PTR(SUCC_PTR(PRED(ptr)), NULL); // 이전블록의 다음블록은 없다.
+        } else { // 2-2) 이전 블록도 없다.
             segregated_free_lists[list] = NULL;
         }
     }
@@ -263,6 +264,9 @@ static void *coalesce(void *ptr)
     // Do not coalesce with previous block if the previous block is tagged with Reallocation tag
     if (GET_TAG(HDRP(PREV_BLKP(ptr))))
         prev_alloc = 1;
+
+
+
 
     if (prev_alloc && next_alloc) {                         // Case 1
         return ptr;
@@ -295,10 +299,10 @@ static void *coalesce(void *ptr)
     return ptr;
 }
 
-static void *place(void *ptr, size_t asize)
+static void *place(void *ptr, size_t asize) // ptr_size = segregated list 에서 들고온 가용블록
 {
-    size_t ptr_size = GET_SIZE(HDRP(ptr));
-    size_t remainder = ptr_size - asize;
+    size_t ptr_size = GET_SIZE(HDRP(ptr)); // ptr_size 크기 정보 획득
+    size_t remainder = ptr_size - asize;  // 남는 공간 = ptr_size(가져온 가용블록)-(사용할 크기)
     
     delete_node(ptr);
     
@@ -404,7 +408,7 @@ void *mm_malloc(size_t size)
         if ((list == LISTLIMIT - 1) || ((searchsize <= 1) && (segregated_free_lists[list] != NULL))) {
             ptr = segregated_free_lists[list];
             /* Ignore blocks that are too small or marked with the reallocation bit */
-            while ((ptr != NULL) && ((asize > GET_SIZE(HDRP(ptr))) || (GET_TAG(HDRP(ptr)))))
+            while ((ptr != NULL) && ((asize > GET_SIZE(HDRP(ptr))) || (GET_TAG(HDRP(ptr))))) // tag 1 표시시 안된다는 의미 
             {
                 ptr = SUCC(ptr);
             }
@@ -431,6 +435,15 @@ void *mm_malloc(size_t size)
     /* Return pointer to newly allocated block */
     return ptr;
 }
+
+
+
+
+
+
+
+
+
 
 /*
  * mm_free - Freeing a block does nothing.
@@ -497,7 +510,7 @@ void *mm_realloc(void *ptr, size_t size)
     /* Allocate more space if overhead falls below the minimum */
     if (block_buffer < 0) {
         /* Check if next block is a free block or the epilogue block */
-        if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) || !GET_SIZE(HDRP(NEXT_BLKP(ptr)))) {
+        if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) || !GET_SIZE(HDRP(NEXT_BLKP(ptr)))) { // 다음 블록이 가용블록이거나, 에필로그 블록일 경우
             remainder = GET_SIZE(HDRP(ptr)) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) - new_size;
             if (remainder < 0) {
                 extendsize = MAX(-remainder, CHUNKSIZE);
@@ -511,7 +524,7 @@ void *mm_realloc(void *ptr, size_t size)
             // Do not split block
             PUT_NOTAG(HDRP(ptr), PACK(new_size + remainder, 1)); 
             PUT_NOTAG(FTRP(ptr), PACK(new_size + remainder, 1)); 
-        } else {
+        } else { //다음블록이 가용블록이 아니거나, 에필로그 블록이 아닐때
             new_ptr = mm_malloc(new_size - DSIZE);
             memcpy(new_ptr, ptr, MIN(size, new_size));
             mm_free(ptr);
