@@ -1,18 +1,3 @@
-// https://github.com/mightydeveloper/Malloc-Lab/blob/master/mm.c
-/*
- * mm.c - malloc using segregated list
- * KAIST
- * Tony Kim
- * 
- * In this approach, 
- * Every block has a header and a footer 
- * in which header contains reallocation information, size, and allocation info
- * and footer contains size and allocation info.
- * Free list are tagged to the segregated list.
- * Therefore all free block contains pointer to the predecessor and successor.
- * The segregated list headers are organized by 2^k size.
- * 
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -36,7 +21,6 @@
 #define CHUNKSIZE (1<<12)//+(1<<7) 
 
 #define LISTLIMIT     20      
-// #define REALLOC_BUFFER  1<<7 // 불필요 --
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y)) 
 
@@ -74,11 +58,9 @@
 // End of my additional macros
 
 team_t team = {
-    "team7",
-    "Suyeon Woo",
-    "woosean999@gmail.com",
-    "Jinseob Kim",
-    "jinseob.kim91@gmail.com",
+    "team5",
+    "giyoun",
+    "dhrldbs@gmail.com",
 };
 
 // Global var
@@ -91,55 +73,6 @@ static void *coalesce(void *ptr);
 static void *place(void *ptr, size_t asize);
 static void insert_node(void *ptr, size_t size);
 static void delete_node(void *ptr);
-
-//static void checkheap(int verbose);
-
-
-///////////////////////////////// Block information /////////////////////////////////////////////////////////
-/*
- 
-A   : Allocated? (1: true, 0:false)
-RA  : Reallocation tag (1: true, 0:false)
- 
- < Allocated Block >
- 
- 
-             31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
-            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- Header :   |                              size of the block                                       |  |  | A|
-    bp ---> +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-            |                                                                                               |
-            |                                                                                               |
-            .                              Payload and padding                                              .
-            .                                                                                               .
-            .                                                                                               .
-            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- Footer :   |                              size of the block                                       |     | A|
-            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- 
- 
- < Free block >
- 
-             31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
-            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- Header :   |                              size of the block                                       |  |RA| A|
-    bp ---> +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-            |                        pointer to its predecessor in Segregated list                          |
-bp+WSIZE--> +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-            |                        pointer to its successor in Segregated list                            |
-            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
-            .                                                                                               .
-            .                                                                                               .
-            .                                                                                               .
-            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- Footer :   |                              size of the block                                       |     | A|
-            +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
- 
- 
-*/
-///////////////////////////////// End of Block information /////////////////////////////////////////////////////////
-
-//////////////////////////////////////// Helper functions //////////////////////////////////////////////////////////
 static void *extend_heap(size_t size)
 {
     void *ptr;                   
@@ -310,22 +243,9 @@ static void *place(void *ptr, size_t asize)
 }
 
 
-
-//////////////////////////////////////// End of Helper functions ////////////////////////////////////////
-
-
-
-
-
-
 /*
  * mm_init - initialize the malloc package.
- * Before calling mm_malloc, mm_realloc, or mm_free, 
- * the application program calls mm_init to perform any necessary initializations,
- * such as allocating the initial heap area.
- *
- * Return value : -1 if there was a problem, 0 otherwise.
- */
+*/
 int mm_init(void)
 {
     int list;         
@@ -353,14 +273,6 @@ int mm_init(void)
 
 /*
  * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- *
- * Role : 
- * 1. The mm_malloc routine returns a pointer to an allocated block payload.
- * 2. The entire allocated block should lie within the heap region.
- * 3. The entire allocated block should (not..?) overlap with any other chunk.
- * 
- * Return value : Always return the payload pointers that are alligned to 8 bytes.
  */
 void *mm_malloc(size_t size)
 {
@@ -421,10 +333,6 @@ void *mm_malloc(size_t size)
 
 /*
  * mm_free - Freeing a block does nothing.
- *
- * Role : The mm_free routine frees the block pointed to by ptr
- *
- * Return value : returns nothing
  */
 void mm_free(void *ptr)
 {
@@ -441,11 +349,6 @@ void mm_free(void *ptr)
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
- *
- * Role : The mm_realloc routine returns a pointer to an allocated 
- *        region of at least size bytes with constraints.
- *
- *  in reallocation cases (realloc-bal.rep, realloc2-bal.rep)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
