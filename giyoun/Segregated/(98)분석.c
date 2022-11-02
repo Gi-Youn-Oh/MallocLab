@@ -1,16 +1,3 @@
-// Tony Kim - 98점
-
-/*
- * mm.c - malloc using segregated list
- * In this approach, 
- * Every block has a header and a footer 
- * in which header contains reallocation information, size, and allocation info
- * and footer contains size and allocation info.
- * Free list are tagged to the segregated list.
- * Therefore all free block contains pointer to the predecessor and successor.
- * The segregated list headers are organized by 2^k size.
- * 
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -25,11 +12,11 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "3조",
+    "5조",
     /* First member's full name */
-    "Hongwook Kim",
+    "Giyoun Oh",
     /* First member's email address */
-    "woogisky@naver.com",
+    "dhrldbs@google.com",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
@@ -40,8 +27,6 @@ team_t team = {
 #define ALIGNMENT 8
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
-
-
 /*
  * Constants and macros
  */

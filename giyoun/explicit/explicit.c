@@ -343,7 +343,7 @@ void *mm_realloc(void *ptr, size_t size) {
     void *newptr;                                                           // 크기 조절 뒤의 새 힙의 시작 포인터
     size_t copySize;                                                        // 복사할 힙의 크기
     
-    newptr = mm_malloc(size-DSIZE);                                               // place를 통해 header, footer가 배정된다.
+    newptr = mm_malloc(size);                                               // place를 통해 header, footer가 배정된다.
     if (newptr == NULL) {
         return NULL;
     }

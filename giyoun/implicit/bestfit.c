@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "mm.h" 
 #include "memlib.h"
@@ -60,7 +61,7 @@ team_t team = {
 #define DSIZE 8 // double word size
 #define CHUNKSIZE (1<<12) // heap을 확장할 떄 확장할 최소 크기 처음 4kb할당, 초기 free블록 // << 비트 쉬프트 연산자 2^12
 #define MAX(x, y) ((x) > (y)? (x) : (y)) // 삼항 연산자, 최대값을 구하는 매크로
-
+#define MIN(x, y) ((x) < (y)? (x) : (y))
 // free 리스트에서 header와 footer를 조작하는 데에는, 많은 양의 캐스팅 변환과 포인터 연산이 사용되기에 애초에 매크로로 만든다.
 // size 와 alloc을 or 비트 연산시킨다.
 // 애초에 size의 오른쪽 3자리는 000으로 비어져 있다.
@@ -101,20 +102,11 @@ team_t team = {
 //이전 블록 위치 = 지금 위치에서 이전 블록 크기 만큼 앞으로 가면 이전 블록 header 바로 뒤
 //(이전 블록의 footer에서 이전 블록의 크기 확인)
 
-/* define searching method for find suitable free blocks to allocate */
-#define NEXT_FIT                                                            
-// define하면 next_fit, 안하면 first_fit으로 탐색한다.
-
 /* global variable & functions */
 static char* heap_listp;                                                    
 // 항상 prologue block을 가리키는 정적 전역 변수 설정
 // static 변수는 함수 내부(지역)에서도 사용이 가능하고 함수 외부(전역)에서도 사용이 가능하다.
-                                               
-#ifdef NEXT_FIT                                                            
- // #ifdef ~ #endif를 통해 조건부로 컴파일이 가능하다. NEXT_FIT이 선언되어 있다면 밑의 변수를 컴파일 할 것이다.
-    static void* last_freep;                                                
-    // next_fit 사용 시 마지막으로 탐색한 free 블록을 가리키는 포인터이다.
-#endif
+                                            
 
 /* 코드 순서상, implicit declaration of function(warning)을 피하기 위해 미리 선언해주는 부분? */
 static void* extend_heap(size_t words);
@@ -154,11 +146,6 @@ int mm_init(void) {
     /* 여기부터 heap_lsitp 가 프롤로그 footer 를 가리킨다 */
     heap_listp += (2 * WSIZE);                                              
     // heap_listp는 prologue footer를 가르키도록 만든다.
-    
-    #ifdef NEXT_FIT
-        last_freep = heap_listp;                                            
-        // next_fit 사용 시 마지막으로 탐색한 free 블록을 가리키는 포인터이다.
-    #endif
     
     // CHUCKSIZE만큼 힙을 확장해 초기 free 블록을 생성한다. 이 때 CHUCKSIZE는 2^12으로 4kB 정도였다.(4096 bytes)
     if (extend_heap(CHUNKSIZE / WSIZE) == NULL) {   // 곧바로 extend_heap이 실행된다.
@@ -247,10 +234,6 @@ static void* coalesce(void* bp) {
         bp = PREV_BLKP(bp);
     }
     
-    #ifdef NEXT_FIT
-        last_freep = bp;
-    #endif
-    
     return bp;
 }
 
@@ -296,45 +279,24 @@ void * mm_malloc (size_t size)
  * find_fit - 힙을 탐색하여 요구하는 메모리 공간보다 큰 가용 블록의 주소를 반환한다.
  */
 static void* find_fit(size_t asize) {
-    // next-fit
-    #ifdef NEXT_FIT
-        void* bp;
-        void* old_last_freep = last_freep;
-        
-        // 이전 탐색이 종료된 시점에서부터 다시 시작한다.
-        for (bp = last_freep; GET_SIZE(HDRP(bp)); bp = NEXT_BLKP(bp)) {     
-            if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    // best fit
+    void* bp;
+    size_t min = SIZE_MAX;
+    void* find_bp = NULL;
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) { 
+    // heap_listp, 즉 prologue부터 탐색한다. 전에 우리는 heap_listp += (2 * WSIZE)를 해두었다.
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {    
+            if (asize = GET_SIZE(HDRP(bp))) {
                 return bp;
             }
+            min = MIN(GET_SIZE(HDRP(bp)),(min));
+            find_bp = bp;
         }
-        
-        // last_freep부터 찾았는데도 없으면 처음부터 찾아본다. 이 구문이 없으면 앞에 free 블록이 있음에도 extend_heap을 하게 되니 메모리 낭비가 된다.
-        for (bp = heap_listp; bp < old_last_freep; bp = NEXT_BLKP(bp)) {
-            if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-                return bp;
-            }
-        }
-        
-        // 탐색을 마쳤으니 last_freep도 수정해준다.
-        last_freep = bp;
-        
-        return NULL;                                                        // 못 찾으면 NULL을 리턴한다.
-        
-    // first-fit
-    #else
-        void* bp;
-        
-        for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) { 
-        // heap_listp, 즉 prologue부터 탐색한다. 전에 우리는 heap_listp += (2 * WSIZE)를 해두었다.
-            if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {    
-                // 할당된 상태가 아니면서 해당 블록의 사이즈가 우리가 할당시키려는 asize보다 크다면 해당 블록에 할당이 가능하므로 곧바로 bp를 반환한다.
-                return bp;
-            }
-        }
-        
-        return NULL;                                                        // 못 찾으면 NULL을 리턴한다.
-        
-    #endif
+    }                                                        
+    if (find_bp == NULL){
+        return NULL;// 못 찾으면 NULL을 리턴한다.
+    }
+    return find_bp;
 }
 
 /*
